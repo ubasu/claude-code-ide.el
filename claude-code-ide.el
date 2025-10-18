@@ -379,7 +379,7 @@ cursor management, and process buffering for superior user experience."
   (setq-local blink-cursor-mode nil)
   (setq-local cursor-type nil)  ; Let vterm handle the cursor entirely
   ;; Increase process read buffering to batch more updates together
-  (when-let ((proc (get-buffer-process (current-buffer))))
+  (when-let* ((proc (get-buffer-process (current-buffer))))
     (set-process-query-on-exit-flag proc nil)
     ;; Try to make vterm read larger chunks at once
     (when (fboundp 'process-put)
@@ -482,7 +482,7 @@ This function binds:
 
 (defun claude-code-ide--session-buffer-p (buffer)
   "Check if BUFFER belongs to a Claude Code session."
-  (when-let ((name (if (stringp buffer) buffer (buffer-name buffer))))
+  (when-let* ((name (if (stringp buffer) buffer (buffer-name buffer))))
     (string-prefix-p "*claude-code[" name)))
 
 (defun claude-code-ide--terminal-reflow-filter (original-fn &rest args)
@@ -525,7 +525,7 @@ width has actually changed, working around the scrolling glitch."
 
 (defun claude-code-ide--get-working-directory ()
   "Get the current working directory (project root or current directory)."
-  (if-let ((project (project-current)))
+  (if-let* ((project (project-current)))
       (expand-file-name (project-root project))
     (expand-file-name default-directory)))
 
@@ -639,7 +639,7 @@ If `claude-code-ide-focus-on-open' is non-nil, the window is selected."
               (remhash directory claude-code-ide--session-ids)))
           ;; Kill the vterm buffer if it exists
           (let ((buffer-name (claude-code-ide--get-buffer-name directory)))
-            (when-let ((buffer (get-buffer buffer-name)))
+            (when-let* ((buffer (get-buffer buffer-name)))
               (when (buffer-live-p buffer)
                 (let ((kill-buffer-hook nil) ; Disable hooks to prevent recursion
                       (kill-buffer-query-functions nil)) ; Don't ask for confirmation
@@ -681,7 +681,7 @@ If the window is not visible, it will be shown in a side window."
       (progn
         (claude-code-ide--display-buffer-in-side-window existing-buffer)
         ;; Update the original tab when showing the window
-        (when-let ((session (claude-code-ide-mcp--get-session-for-project working-dir)))
+        (when-let* ((session (claude-code-ide-mcp--get-session-for-project working-dir)))
           (when (fboundp 'tab-bar--current-tab)
             (setf (claude-code-ide-mcp-session-original-tab session) (tab-bar--current-tab))))
         (claude-code-ide-debug "Claude Code window shown")))))
@@ -721,7 +721,7 @@ Additional flags from `claude-code-ide-cli-extra-flags' are also included."
       (setq claude-cmd (concat claude-cmd " " claude-code-ide-cli-extra-flags)))
     ;; Add MCP tools config if enabled
     (when (claude-code-ide-mcp-server-ensure-server)
-      (when-let ((config (claude-code-ide-mcp-server-get-config session-id)))
+      (when-let* ((config (claude-code-ide-mcp-server-get-config session-id)))
         (let ((json-str (json-encode config)))
           (claude-code-ide-debug "MCP tools config JSON: %s" json-str)
           ;; For vterm, we need to escape for sh -c context
@@ -1003,7 +1003,7 @@ conversation in the current directory."
   (interactive)
   (let* ((working-dir (claude-code-ide--get-working-directory))
          (buffer-name (claude-code-ide--get-buffer-name)))
-    (if-let ((buffer (get-buffer buffer-name)))
+    (if-let* ((buffer (get-buffer buffer-name)))
         (progn
           ;; Kill the buffer (cleanup will be handled by hooks)
           ;; The process sentinel will handle cleanup when the process dies
@@ -1020,8 +1020,8 @@ If the buffer is not visible, display it in the configured side window.
 If the buffer is already visible, switch focus to it."
   (interactive)
   (let ((buffer-name (claude-code-ide--get-buffer-name)))
-    (if-let ((buffer (get-buffer buffer-name)))
-        (if-let ((window (get-buffer-window buffer)))
+    (if-let* ((buffer (get-buffer buffer-name)))
+        (if-let* ((window (get-buffer-window buffer)))
             ;; Buffer is visible, just focus it
             (select-window window)
           ;; Buffer exists but not visible, display it
@@ -1045,7 +1045,7 @@ If the buffer is already visible, switch focus to it."
           (when choice
             (let* ((directory (alist-get choice sessions nil nil #'string=))
                    (buffer-name (funcall claude-code-ide-buffer-name-function directory)))
-              (if-let ((buffer (get-buffer buffer-name)))
+              (if-let* ((buffer (get-buffer buffer-name)))
                   (claude-code-ide--display-buffer-in-side-window buffer)
                 (user-error "Buffer for session %s no longer exists" choice)))))
       (claude-code-ide-log "No active Claude Code sessions"))))
@@ -1067,7 +1067,7 @@ If the buffer is already visible, switch focus to it."
   "Send escape key to the Claude Code terminal buffer for the current project."
   (interactive)
   (let ((buffer-name (claude-code-ide--get-buffer-name)))
-    (if-let ((buffer (get-buffer buffer-name)))
+    (if-let* ((buffer (get-buffer buffer-name)))
         (with-current-buffer buffer
           (claude-code-ide--terminal-send-escape))
       (user-error "No Claude Code session for this project"))))
@@ -1078,7 +1078,7 @@ If the buffer is already visible, switch focus to it."
 This simulates typing backslash followed by Enter, which Claude Code interprets as a newline."
   (interactive)
   (let ((buffer-name (claude-code-ide--get-buffer-name)))
-    (if-let ((buffer (get-buffer buffer-name)))
+    (if-let* ((buffer (get-buffer buffer-name)))
         (with-current-buffer buffer
           (claude-code-ide--terminal-send-string "\\")
           ;; Small delay to ensure prompt text is processed before sending return
@@ -1106,7 +1106,7 @@ When called interactively, reads a prompt from the minibuffer.
 When called programmatically, sends the given PROMPT string."
   (interactive)
   (let ((buffer-name (claude-code-ide--get-buffer-name)))
-    (if-let ((buffer (get-buffer buffer-name)))
+    (if-let* ((buffer (get-buffer buffer-name)))
         (let ((prompt-to-send (or prompt (read-string "Claude prompt: "))))
           (when (not (string-empty-p prompt-to-send))
             (with-current-buffer buffer
