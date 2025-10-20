@@ -79,6 +79,30 @@ When `claude-code-ide-use-ide-diff` is enabled (default), file edits trigger an 
 
 **Key insight**: The content you receive back via `ide_edit_complete` may differ from what you originally proposed in `ide_edit`. Users can and do modify your suggestions. Always use the returned content when writing the final file.
 
+### Ediff Configuration
+
+The ediff interface can be customized through several configuration variables:
+
+**Buffer Layout** - `claude-code-ide-ediff-split-orientation` controls how comparison buffers are arranged:
+- `'vertical` (default): Top-and-bottom layout, easier to see full lines
+- `'horizontal`: Side-by-side layout, easier to compare aligned content
+- `'sensible`: Let Emacs decide based on window dimensions
+
+**Control Panel Style** - `claude-code-ide-ediff-control-panel-style` controls the control panel appearance:
+- `'auto` (default): GUI style in graphical Emacs, terminal style in terminal
+- `'gui`: Always use a separate small window (GUI style)
+- `'terminal`: Always use a single-line panel below buffers (terminal style)
+
+**Frame Management (GUI Mode Only)** - In graphical Emacs, the behavior depends on `claude-code-ide-show-claude-window-in-ediff`:
+- When `t` (default): Creates a separate frame for ediff comparisons, keeping Claude visible in the original frame
+- When `nil`: Opens ediff in the same frame as Claude, temporarily hiding the Claude buffer
+
+The `claude-code-ide-focus-claude-after-ediff` variable controls which frame is raised after ediff opens (GUI mode only):
+- When `t` (default): Raises the Claude frame and focuses the Claude window
+- When `nil`: Raises the ediff frame and focuses the comparison buffers
+
+Frame management does not apply in terminal mode, and `claude-code-ide-show-claude-window-in-ediff` and `claude-code-ide-focus-claude-after-ediff` work as before.
+
 ## Debugging
 
 The user has the ability to enable debug logging and to send you the produced log. Ask them for assistance if needed.

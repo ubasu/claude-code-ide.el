@@ -196,6 +196,27 @@ When nil, the current tab remains active when ediff is opened."
   :type 'boolean
   :group 'claude-code-ide)
 
+(defcustom claude-code-ide-ediff-split-orientation 'vertical
+  "Orientation for ediff buffer split.
+When 'vertical (default), buffers are displayed top-and-bottom.
+When 'horizontal, buffers are displayed side-by-side.
+When 'sensible, buffers are displayed sensibly"
+  :type '(choice (const :tag "Vertical (top-and-bottom)" vertical)
+                 (const :tag "Horizontal (side-by-side)" horizontal)
+                 (const :tag "Sensible" sensible))
+  :group 'claude-code-ide)
+
+(defcustom claude-code-ide-ediff-control-panel-style 'auto
+  "Style for the ediff control panel.
+When 'auto (default), use GUI-style in graphical environments and
+terminal-style in terminal environments.
+When 'gui, always use a separate small window (GUI-style).
+When 'terminal, always use a single-line panel below buffers (terminal-style)."
+  :type '(choice (const :tag "Auto-detect" auto)
+                 (const :tag "GUI style" gui)
+                 (const :tag "Terminal style" terminal))
+  :group 'claude-code-ide)
+
 (defcustom claude-code-ide-use-side-window t
   "Whether to display Claude Code in a side window.
 When non-nil (default), Claude Code opens in a dedicated side window
