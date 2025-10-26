@@ -67,8 +67,16 @@ if TRANSIENT_DIR=$(find_emacs_package "transient"); then
     LOAD_PATH="$LOAD_PATH -L $TRANSIENT_DIR"
 fi
 
+if COND_LET_DIR=$(find_emacs_package "cond-let"); then
+    LOAD_PATH="$LOAD_PATH -L $COND_LET_DIR"
+fi
+
 if VTERM_DIR=$(find_emacs_package "emacs-libvterm"); then
     LOAD_PATH="$LOAD_PATH -L $VTERM_DIR"
+fi
+
+if WEB_SERVER_DIR=$(find_emacs_package "web-server"); then
+    LOAD_PATH="$LOAD_PATH -L $WEB_SERVER_DIR"
 fi
 
 # STEP 1: Compile all elisp files
