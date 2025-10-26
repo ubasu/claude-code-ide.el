@@ -1,0 +1,33 @@
+If I load the watcher after starting Claude Code, then I don't get any
+messages saying "RESET TO NIL DETECTED!", but cursor-type stays nil even after
+setting to box.
+
+However, if I use the alternate approach of loading the watcher first, then I
+get the messages and the backtrace shown below - 
+
+
+[CURSOR-WATCH] Started watching cursor-type changes
+[CURSOR-WATCH] Current value: t
+condition-case: Buffer is read-only: #<buffer *claude-code[raganotebook]*>
+[CURSOR-WATCH] cursor-type changed to: nil (operation: set)
+[CURSOR-WATCH] ⚠️  RESET TO NIL DETECTED!
+[CURSOR-WATCH] Backtrace:
+
+[CURSOR-WATCH] cursor-type changed to: nil (operation: set)
+[CURSOR-WATCH] ⚠️  RESET TO NIL DETECTED!
+[CURSOR-WATCH] Backtrace:
+
+
+  backtrace()
+  (let ((standard-output (current-buffer))) (backtrace))
+  (let ((standard-output standard-output)) (let ((standard-output (current-buffer))) (backtrace)))
+  (progn (let ((standard-output standard-output)) (let ((standard-output (current-buffer))) (backtrace))) (save-current-buffer (set-buffer standard-output) (buffer-string)))
+  (unwind-protect (progn (let ((standard-output standard-output)) (let ((standard-output (current-buffer))) (backtrace))) (save-current-buffer (set-buffer standard-output) (buffer-string))) (kill-buffer standard-output))
+  (let ((standard-output (generate-new-buffer " *string-output*" t))) (unwind-protect (progn (let ((standard-output standard-output)) (let ((standard-output (current-buffer))) (backtrace))) (save-current-buffer (set-buffer standard-output) (buffer-string))) (kill-buffer standard-output)))
+  (let ((backtrace-str (let ((standard-output (generate-new-buffer " *string-output*" t))) (unwind-protect (progn (let (...) (let ... ...)) (save-current-buffer (set-buffer standard-output) (buffer-string))) (kill-buffer standard-output))))) (setq claude-cursor-reset-log (cons (list :time (current-time-string) :symbol symbol :new-value newval :operation operation :where where :backtrace backtrace-str) claude-cursor-reset-log)) (message "[CURSOR-WATCH] cursor-type changed to: %s (operation: %s)" newval operation) (if (null newval) (progn (message "[CURSOR-WATCH] ⚠️  RESET TO NIL DETECTED!") (message "[CURSOR-WATCH] Backtrace:") (message "%s" backtrace-str))))
+  claude-cursor-watch-changes(cursor-type nil set #<buffer *claude-code[raganotebook]*>)
+  set(cursor-type nil)
+  vterm--redraw(#<user-ptr ptr=0x592f624efba0 finalizer=0x70b5677031a0>)
+  vterm--delayed-redraw(#<buffer *claude-code[raganotebook]*>)
+  apply(vterm--delayed-redraw #<buffer *claude-code[raganotebook]*>)
+  timer-event-handler([t 26877 38177 899383 nil vterm--delayed-redraw (#<buffer *claude-code[raganotebook]*>) nil 288000 nil])
