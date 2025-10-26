@@ -373,8 +373,7 @@ INPUT contains the terminal output stream."
                                    (when (buffer-live-p buf)
                                      (with-current-buffer buf
                                        (when claude-code-ide--vterm-render-queue
-                                         (let ((inhibit-redisplay t)
-                                               (data claude-code-ide--vterm-render-queue))
+                                         (let ((data claude-code-ide--vterm-render-queue))
                                            ;; Clear queue first to prevent recursion
                                            (setq claude-code-ide--vterm-render-queue nil
                                                  claude-code-ide--vterm-render-timer nil)
@@ -386,6 +385,35 @@ INPUT contains the terminal output stream."
           ;; Standard processing for regular output
           (funcall orig-fun process input))))))
 
+(defun claude-code-ide--configure-vterm-cursor ()
+  "Configure cursor for proper focus indication in vterm.
+Waits for vterm to be fully initialized before applying settings.
+Retries every 50ms (claude-code-ide-mcp-selection-delay) until vterm is ready."
+  (when (claude-code-ide--session-buffer-p (current-buffer))
+    (if (and (boundp 'vterm--term) vterm--term)
+        ;; vterm is ready, apply cursor settings
+        (progn
+          (setq-local cursor-type 'box)
+          (setq-local cursor-in-non-selected-windows 'hollow)
+          (claude-code-ide-debug "Cursor configured after vterm ready"))
+      ;; vterm not ready yet, retry using existing selection delay constant
+      (claude-code-ide-debug "vterm not ready, retrying cursor config in %sms"
+                             (* claude-code-ide-mcp-selection-delay 1000))
+      (run-at-time claude-code-ide-mcp-selection-delay nil
+                   (lambda (buf)
+                     (when (buffer-live-p buf)
+                       (with-current-buffer buf
+                         (claude-code-ide--configure-vterm-cursor))))
+                   (current-buffer)))))
+
+(defun claude-code-ide--reapply-cursor-after-redraw (&rest _)
+  "Re-apply cursor settings after vterm redraw.
+vterm--redraw resets cursor-type to nil during its delayed redraw timer,
+so we need to restore our cursor settings after every redraw."
+  (when (claude-code-ide--session-buffer-p (current-buffer))
+    (setq-local cursor-type 'box)
+    (setq-local cursor-in-non-selected-windows 'hollow)))
+
 (defun claude-code-ide--configure-vterm-buffer ()
   "Configure vterm for enhanced performance and visual quality.
 Establishes optimal terminal settings including rendering optimizations,
@@ -395,10 +423,14 @@ cursor management, and process buffering for superior user experience."
   ;; Disable immediate redraw to batch updates and reduce flickering
   (when (boundp 'vterm--redraw-immididately)
     (setq-local vterm--redraw-immididately nil))
-  ;; Try to prevent cursor flickering by disabling Emacs' own cursor management
-  (setq-local cursor-in-non-selected-windows nil)
-  (setq-local blink-cursor-mode nil)
-  (setq-local cursor-type nil)  ; Let vterm handle the cursor entirely
+  ;; Add hook to configure cursor after vterm-mode initialization
+  ;; This ensures cursor settings persist even if vterm modifies them
+  (add-hook 'vterm-mode-hook #'claude-code-ide--configure-vterm-cursor)
+  ;; Also apply cursor settings immediately
+  (claude-code-ide--configure-vterm-cursor)
+  ;; Re-apply cursor settings after vterm redraws
+  ;; vterm--redraw resets cursor-type to nil, we need to restore it after each redraw
+  (advice-add 'vterm--redraw :after #'claude-code-ide--reapply-cursor-after-redraw)
   ;; Increase process read buffering to batch more updates together
   (when-let* ((proc (get-buffer-process (current-buffer))))
     (set-process-query-on-exit-flag proc nil)
@@ -650,6 +682,10 @@ If `claude-code-ide-focus-on-open' is non-nil, the window is selected."
                      claude-code-ide-vterm-anti-flicker
                      (= (hash-table-count claude-code-ide--processes) 0))
             (advice-remove 'vterm--filter #'claude-code-ide--vterm-smart-renderer))
+          ;; Remove vterm redraw cursor advice if no sessions remain
+          (when (and (eq claude-code-ide-terminal-backend 'vterm)
+                     (= (hash-table-count claude-code-ide--processes) 0))
+            (advice-remove 'vterm--redraw #'claude-code-ide--reapply-cursor-after-redraw))
           ;; Stop MCP server for this project directory
           (claude-code-ide-mcp-stop-session directory)
           ;; Notify MCP tools server about session end with session ID
