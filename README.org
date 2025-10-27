@@ -211,8 +211,10 @@ This allows you to refine Claude's suggestions before they're applied, ensuring 
 | ~claude-code-ide-enable-mcp-server~             | Enable MCP tools server                     | ~nil~                                  |
 | ~claude-code-ide-mcp-server-port~               | Port for MCP tools server                   | ~nil~ (auto-select)                    |
 | ~claude-code-ide-mcp-server-tools~              | Alist of exposed Emacs functions            | ~nil~                                  |
+| ~claude-code-ide-mcp-allowed-tools~             | Allowed MCP tools pattern/list              | ~'auto~                                |
 | ~claude-code-ide-diagnostics-backend~           | Diagnostics backend (auto/flycheck/flymake) | ~'auto~                                |
 | ~claude-code-ide-prevent-reflow-glitch~         | Prevent terminal reflow glitch (bug #1422)  | ~t~                                    |
+| ~claude-code-ide-eat-preserve-position~         | Maintain eat terminal scroll position       | ~t~                                    |
 
 *** Side Window Configuration
 

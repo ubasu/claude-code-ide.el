@@ -38,10 +38,10 @@ The package uses a bidirectional communication model:
 ## Hooks
 
 This project uses Claude Code hooks to automatically maintain code quality. The hooks are configured in `.claude/settings.json` and include:
-- **PostToolUse hooks**: Automatically format code and remove trailing whitespace after edits
-- **Stop hooks**: Run tests and linting checks before allowing Claude to stop, blocking if issues are found
+- **PostToolUse hooks**: Automatically format code and remove trailing whitespace after Write/Edit operations using `./scripts/format-and-clean.sh`
+- **Stop hooks**: Run byte-compilation and tests before allowing Claude to stop, blocking if issues are found using `./scripts/compile-and-test.sh`
 
-These hooks help ensure consistent code formatting and catch issues early in the development process.
+These hooks help ensure consistent code formatting and catch issues early in the development process. The scripts are designed to work both as Claude Code hooks (with `--hook` flag) and as standalone commands for manual use.
 
 ## Commands
 
@@ -102,6 +102,22 @@ The `claude-code-ide-focus-claude-after-ediff` variable controls which frame is 
 - When `nil`: Raises the ediff frame and focuses the comparison buffers
 
 Frame management does not apply in terminal mode, and `claude-code-ide-show-claude-window-in-ediff` and `claude-code-ide-focus-claude-after-ediff` work as before.
+
+## Terminal Integration
+
+### vterm Cursor Visibility
+
+The package implements a fix for vterm cursor persistence. vterm's delayed redraw timer periodically resets `cursor-type` to `nil`, causing the Emacs cursor to disappear in vterm buffers. The solution uses two mechanisms:
+
+1. **Initialization polling** - Waits for vterm to be fully initialized before applying cursor settings (retries every 50ms until vterm is ready)
+2. **Persistent restoration** - Adds `:after` advice to `vterm--redraw` to restore cursor settings after each vterm redraw
+
+Together these ensure:
+- The cursor appears correctly on startup
+- The cursor remains visible during vterm's periodic redraws
+- Proper focus indication (box cursor in selected window, hollow in non-selected)
+
+The advice is automatically added when the first vterm-based Claude Code session starts and removed when the last session ends, ensuring no interference with non-Claude vterm buffers.
 
 ## Debugging
 
