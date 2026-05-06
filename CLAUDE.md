@@ -107,17 +107,9 @@ Frame management does not apply in terminal mode, and `claude-code-ide-show-clau
 
 ### vterm Cursor Visibility
 
-The package implements a fix for vterm cursor persistence. vterm's delayed redraw timer periodically resets `cursor-type` to `nil`, causing the Emacs cursor to disappear in vterm buffers. The solution uses two mechanisms:
+Rather than fighting vterm's internal cursor management, the package delegates cursor rendering entirely to vterm by setting `cursor-type` to `nil` and disabling `cursor-in-non-selected-windows` and `blink-cursor-mode` locally. Additional flicker sources are suppressed: `hl-line-mode` is disabled and the non-breaking space in the prompt is remapped to avoid theming artifacts.
 
-1. **Initialization polling** - Waits for vterm to be fully initialized before applying cursor settings (retries every 50ms until vterm is ready)
-2. **Persistent restoration** - Adds `:after` advice to `vterm--redraw` to restore cursor settings after each vterm redraw
-
-Together these ensure:
-- The cursor appears correctly on startup
-- The cursor remains visible during vterm's periodic redraws
-- Proper focus indication (box cursor in selected window, hollow in non-selected)
-
-The advice is automatically added when the first vterm-based Claude Code session starts and removed when the last session ends, ensuring no interference with non-Claude vterm buffers.
+For `vterm-copy-mode`, a hook (`claude-code-ide--vterm-copy-mode-hook`) saves and restores `cursor-type` so the cursor becomes visible while the user is scrolling, then disappears again on exit.
 
 ## Debugging
 

@@ -3,7 +3,7 @@
 ;; Copyright (C) 2025
 
 ;; Author: Yoav Orot
-;; Version: 0.2.5
+;; Version: 0.2.7
 ;; Package-Requires: ((emacs "28.1") (websocket "1.12") (transient "0.9.0") (web-server "0.1.2"))
 ;; Keywords: ai, claude, code, assistant, mcp, websocket
 ;; URL: https://github.com/manzaltu/claude-code-ide.el
@@ -148,8 +148,9 @@ Can be `'left', `'right', `'top', or `'bottom'."
                  (const :tag "Bottom" bottom))
   :group 'claude-code-ide)
 
-(defcustom claude-code-ide-window-width 90
-  "Width of the Claude Code side window when opened on left or right."
+(defcustom claude-code-ide-window-width 100
+  "Body width of the Claude Code side window when opened on left or right.
+This sets the usable text area width, excluding fringes and margins."
   :type 'integer
   :group 'claude-code-ide)
 
@@ -177,6 +178,13 @@ When non-nil (default), the Claude Code side window is restored
 after opening ediff.  When nil, the Claude Code window remains
 hidden during diff viewing, giving you more screen space for the
 diff comparison."
+  :type 'boolean
+  :group 'claude-code-ide)
+
+(defcustom claude-code-ide-enable-execute-code t
+  "Whether to expose the executeCode tool to the model.
+When non-nil, Claude Code can evaluate Elisp expressions in Emacs
+via the executeCode MCP tool.  Set to nil to hide the tool entirely."
   :type 'boolean
   :group 'claude-code-ide)
 
@@ -234,6 +242,13 @@ is an alternative terminal emulator that may work better in some
 environments."
   :type '(choice (const :tag "vterm" vterm)
                  (const :tag "eat" eat))
+  :group 'claude-code-ide)
+
+(defcustom claude-code-ide-no-flicker nil
+  "Enable Claude Code's flicker-free terminal renderer.
+When non-nil, sets CLAUDE_CODE_NO_FLICKER=1 which activates an
+alternative rendering mode that eliminates terminal flicker."
+  :type 'boolean
   :group 'claude-code-ide)
 
 (defcustom claude-code-ide-prevent-reflow-glitch t
@@ -315,10 +330,20 @@ a more stable viewing experience when working with multiple windows."
 ;;; Vterm Rendering Optimization
 
 (defvar-local claude-code-ide--vterm-render-queue nil
-  "Queue for optimizing terminal rendering sequences.")
+  "List of pending terminal output strings awaiting batched rendering.
+Stored in reverse order for O(1) push, joined at flush time.")
 
 (defvar-local claude-code-ide--vterm-render-timer nil
   "Timer for executing queued rendering operations.")
+
+(defun claude-code-ide--count-escape-sequence (sequence input)
+  "Count occurrences of escape SEQUENCE in INPUT.
+More efficient than split-string + cl-count-if for simple counting."
+  (let ((count 0) (start 0))
+    (while (setq start (string-search sequence input start))
+      (cl-incf count)
+      (cl-incf start (length sequence)))
+    count))
 
 (defun claude-code-ide--vterm-smart-renderer (orig-fun process input)
   "Smart rendering filter for optimized vterm display updates.
@@ -334,56 +359,79 @@ INPUT contains the terminal output stream."
       ;; Feature disabled or not a Claude buffer, pass through normally
       (funcall orig-fun process input)
     (with-current-buffer (process-buffer process)
-      ;; Detect rapid terminal redraw sequences
-      ;; Pattern analysis for complex terminal updates:
-      ;; - Vertical cursor movements (ESC[<n>A)
-      ;; - Line clearing operations (ESC[K)
-      ;; - High escape sequence density
-      (let* ((complex-redraw-detected
-              ;; Pattern: vertical movement + clear, repeated
-              (string-match-p "\033\\[[0-9]*A.*\033\\[K.*\033\\[[0-9]*A.*\033\\[K" input))
-             (clear-count (cl-count-if (lambda (s) (string= s "\033[K"))
-                                       (split-string input "\033\\[K" t)))
-             (escape-count (cl-count ?\033 input))
-             (input-length (length input))
-             ;; High escape density indicates redrawing, not normal output
-             (escape-density (if (> input-length 0)
-                                 (/ (float escape-count) input-length)
-                               0)))
-        ;; Optimize rendering for detected patterns:
-        ;; 1. Complex redraw sequence detected, OR
-        ;; 2. Escape sequence density exceeds threshold with line operations
-        ;; 3. OR already queuing (to complete the sequence)
-        (if (or complex-redraw-detected
-                (and (> escape-density 0.3)
-                     (>= clear-count 2))
-                claude-code-ide--vterm-render-queue)
-            (progn
-              ;; Add to buffer
-              (setq claude-code-ide--vterm-render-queue
-                    (concat claude-code-ide--vterm-render-queue input))
-              ;; Reset existing render timer
-              (when claude-code-ide--vterm-render-timer
-                (cancel-timer claude-code-ide--vterm-render-timer))
-              ;; Schedule optimized rendering
-              ;; Timing calibrated for visual quality
-              (setq claude-code-ide--vterm-render-timer
-                    (run-at-time claude-code-ide-vterm-render-delay nil
-                                 (lambda (buf)
-                                   (when (buffer-live-p buf)
-                                     (with-current-buffer buf
-                                       (when claude-code-ide--vterm-render-queue
-                                         (let ((data claude-code-ide--vterm-render-queue))
-                                           ;; Clear queue first to prevent recursion
-                                           (setq claude-code-ide--vterm-render-queue nil
-                                                 claude-code-ide--vterm-render-timer nil)
-                                           ;; Execute queued rendering
-                                           (funcall orig-fun
-                                                    (get-buffer-process buf)
-                                                    data))))))
-                                 (current-buffer))))
-          ;; Standard processing for regular output
-          (funcall orig-fun process input))))))
+      ;; Fast path: plain text with no active queue skips all pattern detection
+      ;; This optimizes the common case of typing in the prompt
+      (if (and (not claude-code-ide--vterm-render-queue)
+               (not (string-search "\033" input)))
+          (funcall orig-fun process input)
+        ;; Detect rapid terminal redraw sequences
+        ;; Pattern analysis for complex terminal updates:
+        ;; - Vertical cursor movements (ESC[<n>A)
+        ;; - Line clearing operations (ESC[K)
+        ;; - High escape sequence density
+        (let* ((complex-redraw-detected
+                ;; Pattern: vertical movement + clear, repeated
+                (string-match-p "\033\\[[0-9]*A.*\033\\[K.*\033\\[[0-9]*A.*\033\\[K" input))
+               (clear-count (claude-code-ide--count-escape-sequence "\033[K" input))
+               (escape-count (cl-count ?\033 input))
+               (input-length (length input))
+               ;; High escape density indicates redrawing, not normal output
+               (escape-density (if (> input-length 0)
+                                   (/ (float escape-count) input-length)
+                                 0)))
+          ;; Optimize rendering for detected patterns:
+          ;; 1. Complex redraw sequence detected, OR
+          ;; 2. Escape sequence density exceeds threshold with line operations
+          ;; 3. OR already queuing (to complete the sequence)
+          (if (or complex-redraw-detected
+                  (and (> escape-density 0.3)
+                       (>= clear-count 2))
+                  claude-code-ide--vterm-render-queue)
+              (progn
+                ;; Add to queue (list for O(1) push, joined at flush time)
+                (push input claude-code-ide--vterm-render-queue)
+                ;; Reset existing render timer
+                (when claude-code-ide--vterm-render-timer
+                  (cancel-timer claude-code-ide--vterm-render-timer))
+                ;; Schedule optimized rendering
+                ;; Timing calibrated for visual quality
+                (setq claude-code-ide--vterm-render-timer
+                      (run-at-time claude-code-ide-vterm-render-delay nil
+                                   (lambda (buf)
+                                     (when (buffer-live-p buf)
+                                       (with-current-buffer buf
+                                         (when claude-code-ide--vterm-render-queue
+                                           (let* ((inhibit-redisplay t)
+                                                  (queue claude-code-ide--vterm-render-queue)
+                                                  ;; Join list in correct order
+                                                  (data (apply #'concat (nreverse queue))))
+                                             ;; Clear queue first to prevent recursion
+                                             (setq claude-code-ide--vterm-render-queue nil
+                                                   claude-code-ide--vterm-render-timer nil)
+                                             ;; Execute queued rendering
+                                             (funcall orig-fun
+                                                      (get-buffer-process buf)
+                                                      data))))))
+                                   (current-buffer))))
+            ;; Standard processing for regular output
+            (funcall orig-fun process input)))))))
+
+(defvar-local claude-code-ide--saved-cursor-type nil
+  "Saved cursor-type before entering vterm-copy-mode.")
+
+(defun claude-code-ide--vterm-copy-mode-hook ()
+  "Make sure cursor is visible in `vterm-copy-mode'.
+Saves the current cursor-type when entering copy mode and restores it
+when exiting, ensuring compatibility with evil-mode and other packages
+that manage cursor appearance."
+  (if vterm-copy-mode
+      ;; Entering copy mode: save current cursor-type and make cursor visible
+      (progn
+        (setq claude-code-ide--saved-cursor-type cursor-type)
+        (when (null cursor-type)
+          (setq cursor-type t)))
+    ;; Exiting copy mode: restore previous cursor-type
+    (setq cursor-type claude-code-ide--saved-cursor-type)))
 
 (defun claude-code-ide--configure-vterm-cursor ()
   "Configure cursor for proper focus indication in vterm.
@@ -423,14 +471,18 @@ cursor management, and process buffering for superior user experience."
   ;; Disable immediate redraw to batch updates and reduce flickering
   (when (boundp 'vterm--redraw-immididately)
     (setq-local vterm--redraw-immididately nil))
-  ;; Add hook to configure cursor after vterm-mode initialization
-  ;; This ensures cursor settings persist even if vterm modifies them
-  (add-hook 'vterm-mode-hook #'claude-code-ide--configure-vterm-cursor)
-  ;; Also apply cursor settings immediately
-  (claude-code-ide--configure-vterm-cursor)
-  ;; Re-apply cursor settings after vterm redraws
-  ;; vterm--redraw resets cursor-type to nil, we need to restore it after each redraw
-  (advice-add 'vterm--redraw :after #'claude-code-ide--reapply-cursor-after-redraw)
+  ;; Try to prevent cursor flickering by disabling Emacs' own cursor management
+  (setq-local cursor-in-non-selected-windows nil)
+  (setq-local blink-cursor-mode nil)
+  (setq-local cursor-type nil)  ; Let vterm handle the cursor entirely
+  ;; disable hl-line-mode, eliminates another source of flicker
+  (setq-local global-hl-line-mode nil)
+  (when (featurep 'hl-line)
+    (hl-line-mode -1))
+  ;; make sure the non-breaking space in the prompt isn't themed
+  (face-remap-add-relative 'nobreak-space :inherit 'default)
+  ;; Register hook for copy-mode cursor visibility
+  (add-hook 'vterm-copy-mode-hook #'claude-code-ide--vterm-copy-mode-hook nil t)
   ;; Increase process read buffering to batch more updates together
   (when-let* ((proc (get-buffer-process (current-buffer))))
     (set-process-query-on-exit-flag proc nil)
@@ -492,6 +544,18 @@ cursor management, and process buffering for superior user experience."
       (eat-term-send-string eat-terminal "\r")))
    (t
     (error "Unknown terminal backend: %s" claude-code-ide-terminal-backend))))
+
+(defun claude-code-ide--sync-terminal-dimensions (buffer window)
+  "Sync terminal dimensions in BUFFER to match WINDOW size.
+This ensures the terminal process has the correct dimensions after
+the buffer has been displayed in its final window, which may differ
+from the window where it was initially created."
+  (when (and buffer window (buffer-live-p buffer) (window-live-p window))
+    (with-current-buffer buffer
+      (when-let ((proc (get-buffer-process buffer)))
+        (let ((height (window-body-height window))
+              (width (window-body-width window)))
+          (set-process-window-size proc height width))))))
 
 (defun claude-code-ide--setup-terminal-keybindings ()
   "Set up keybindings for the Claude Code terminal buffer.
@@ -640,7 +704,12 @@ If `claude-code-ide-focus-on-open' is non-nil, the window is selected."
                         (side . ,side)
                         (slot . ,slot)
                         ,@(when (memq side '(left right))
-                            `((window-width . ,claude-code-ide-window-width)))
+                            `((window-width
+                               . ,(lambda (win)
+                                    (let ((delta (- claude-code-ide-window-width
+                                                    (window-body-width win))))
+                                      (unless (zerop delta)
+                                        (window-resize win delta t)))))))
                         ,@(when (memq side '(top bottom))
                             `((window-height . ,claude-code-ide-window-height)))
                         (window-parameters . ,window-parameters)))))
@@ -658,6 +727,11 @@ If `claude-code-ide-focus-on-open' is non-nil, the window is selected."
                (memq claude-code-ide-window-side '(top bottom)))
       (set-window-text-height window claude-code-ide-window-height)
       (set-window-dedicated-p window t))
+    ;; Sync terminal dimensions with the actual window size
+    ;; This is necessary because vterm/eat may have been created with
+    ;; different dimensions before being displayed in this window
+    (when window
+      (claude-code-ide--sync-terminal-dimensions buffer window))
     window))
 
 (defvar claude-code-ide--cleanup-in-progress nil
@@ -852,10 +926,11 @@ Signals an error if terminal fails to initialize."
   (claude-code-ide--terminal-ensure-backend)
   (let* ((claude-cmd (claude-code-ide--build-claude-command continue resume session-id))
          (default-directory working-dir)
-         (env-vars (list (format "CLAUDE_CODE_SSE_PORT=%d" port)
-                         "ENABLE_IDE_INTEGRATION=true"
-                         "TERM_PROGRAM=emacs"
-                         "FORCE_CODE_TERMINAL=true")))
+         (env-vars (append (list (format "CLAUDE_CODE_SSE_PORT=%d" port)
+                                 "TERM_PROGRAM=emacs"
+                                 "FORCE_CODE_TERMINAL=true")
+                           (when claude-code-ide-no-flicker
+                             (list "CLAUDE_CODE_NO_FLICKER=1")))))
     ;; Log the command for debugging
     (claude-code-ide-debug "Starting Claude with command: %s" claude-cmd)
     (claude-code-ide-debug "Working directory: %s" working-dir)

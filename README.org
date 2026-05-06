@@ -44,27 +44,27 @@ This deep integration means Claude Code understands your project context and can
 
 *** Active File Awareness
 #+CAPTION: Claude Code automatically knows which file you're currently viewing in Emacs
-#+html: <img src="https://github.com/manzaltu/claude-code-ide.el/blob/25053b5f1b8123eed5c3f00e8b3e9687ee33391d/screenshots/file.png">
+#+html: <img src="https://github.com/manzaltu/claude-code-ide.el/blob/fb517ac3700f92f8d5481f0bcf9fe4a3c26c91ab/screenshots/file.png">
 #+html: <p align="center"><i>Claude Code automatically knows which file you're currently viewing in Emacs</i></p>
 
 *** Code Selection Context
 #+CAPTION: Claude Code can access and work with selected text in your buffers
-#+html: <img src="https://github.com/manzaltu/claude-code-ide.el/blob/25053b5f1b8123eed5c3f00e8b3e9687ee33391d/screenshots/selection.png">
+#+html: <img src="https://github.com/manzaltu/claude-code-ide.el/blob/fb517ac3700f92f8d5481f0bcf9fe4a3c26c91ab/screenshots/selection.png">
 #+html: <p align="center"><i>Claude Code can access and work with selected text in your buffers</i></p>
 
 *** Advanced Diff View with Diagnostics
 #+CAPTION: Integrated ediff view for code changes, with Claude Code able to directly access diagnostic data (errors, warnings, etc.) from opened files
-#+html: <img src="https://github.com/manzaltu/claude-code-ide.el/blob/25053b5f1b8123eed5c3f00e8b3e9687ee33391d/screenshots/ediff_diag.png">
+#+html: <img src="https://github.com/manzaltu/claude-code-ide.el/blob/fb517ac3700f92f8d5481f0bcf9fe4a3c26c91ab/screenshots/ediff_diag.png">
 #+html: <p align="center"><i>Integrated ediff view for code changes, with Claude Code able to directly access diagnostic data (errors, warnings, etc.) from opened files</i></p>
 
 *** Automatic Text Mentions
 #+CAPTION: Automatically mention and reference selected text in Claude conversations
-#+html: <img src="https://github.com/manzaltu/claude-code-ide.el/blob/25053b5f1b8123eed5c3f00e8b3e9687ee33391d/screenshots/mentions.png">
+#+html: <img src="https://github.com/manzaltu/claude-code-ide.el/blob/fb517ac3700f92f8d5481f0bcf9fe4a3c26c91ab/screenshots/mentions.png">
 #+html: <p align="center"><i>Automatically mention and reference selected text in Claude conversations</i></p>
 
 *** Session Restoration
 #+CAPTION: Resume previous Claude Code conversations with the --resume flag
-#+html: <img src="https://github.com/manzaltu/claude-code-ide.el/blob/25053b5f1b8123eed5c3f00e8b3e9687ee33391d/screenshots/restore.png">
+#+html: <img src="https://github.com/manzaltu/claude-code-ide.el/blob/fb517ac3700f92f8d5481f0bcf9fe4a3c26c91ab/screenshots/restore.png">
 #+html: <p align="center"><i>Resume previous Claude Code conversations with the --resume flag</i></p>
 
 * Installation
@@ -198,7 +198,7 @@ This allows you to refine Claude's suggestions before they're applied, ensuring 
 | ~claude-code-ide-debug-buffer~                  | Buffer name for debug output                | ~"*claude-code-ide-debug*"~              |
 | ~claude-code-ide-use-side-window~               | Use side window vs regular buffer           | ~t~                                    |
 | ~claude-code-ide-window-side~                   | Side for Claude window                      | ~'right~                               |
-| ~claude-code-ide-window-width~                  | Width for side windows (left/right)         | ~90~                                   |
+| ~claude-code-ide-window-width~                  | Body width for side windows (left/right)    | ~100~                                  |
 | ~claude-code-ide-window-height~                 | Height for side windows (top/bottom)        | ~20~                                   |
 | ~claude-code-ide-focus-on-open~                 | Focus Claude window when opened             | ~t~                                    |
 | ~claude-code-ide-focus-claude-after-ediff~      | Focus Claude window after opening ediff     | ~t~                                    |
@@ -213,8 +213,10 @@ This allows you to refine Claude's suggestions before they're applied, ensuring 
 | ~claude-code-ide-mcp-server-tools~              | Alist of exposed Emacs functions            | ~nil~                                  |
 | ~claude-code-ide-mcp-allowed-tools~             | Allowed MCP tools pattern/list              | ~'auto~                                |
 | ~claude-code-ide-diagnostics-backend~           | Diagnostics backend (auto/flycheck/flymake) | ~'auto~                                |
+| ~claude-code-ide-no-flicker~                    | Enable flicker-free terminal renderer       | ~nil~                                  |
 | ~claude-code-ide-prevent-reflow-glitch~         | Prevent terminal reflow glitch (bug #1422)  | ~t~                                    |
 | ~claude-code-ide-eat-preserve-position~         | Maintain eat terminal scroll position       | ~t~                                    |
+| ~claude-code-ide-enable-execute-code~           | Allow model to evaluate Elisp in Emacs      | ~t~                                    |
 
 *** Side Window Configuration
 
@@ -329,6 +331,19 @@ Claude Code IDE supports both =vterm= and =eat= as terminal backends. By default
 
 The =eat= backend is a pure Elisp terminal emulator that may work better in some environments where =vterm= compilation is problematic. Both backends provide full terminal functionality including color support and special key handling.
 
+**** Flicker-Free Renderer (Experimental)
+
+Claude Code includes an experimental alternative terminal renderer that eliminates flickering. To enable it:
+
+#+begin_src emacs-lisp
+(setq claude-code-ide-no-flicker t)
+#+end_src
+
+Note that with this renderer, normal Emacs buffer scrolling and search (=C-s=, =C-r=) will not work in the terminal buffer. Instead, use Claude Code's built-in keybindings:
+
+- =C-o j= / =C-o k= - Scroll up/down through the transcript
+- =C-o /= - Search the transcript
+
 **** vterm Rendering Optimization
 
 Claude Code IDE includes intelligent flicker reduction for vterm terminals to provide smoother visual output:
@@ -390,6 +405,16 @@ Claude Code IDE supports both Flycheck and Flymake for code diagnostics. By defa
 ;; Or force a specific backend
 (setq claude-code-ide-diagnostics-backend 'flycheck)
 (setq claude-code-ide-diagnostics-backend 'flymake)
+#+end_src
+
+*** Elisp Code Execution
+
+Claude Code can evaluate Elisp expressions directly in your running Emacs session via the =executeCode= MCP tool. This is enabled by default.
+
+To disable it:
+
+#+begin_src emacs-lisp
+(setq claude-code-ide-enable-execute-code nil)
 #+end_src
 
 *** Custom Buffer Naming
